@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini GTA 3D - Protótipo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #111; font-family: system-ui, sans-serif; }
+    #ui {
+      position: absolute; top: 12px; left: 12px;
+      background: rgba(0,0,0,0.75); color: #fff;
+      padding: 12px 16px; border-radius: 8px;
+      font-size: 14px; line-height: 1.5; pointer-events: none;
+      max-width: 320px;
+    }
+    #ui h1 { font-size: 16px; margin-bottom: 6px; color: #4fc3f7; }
+    #status { margin-top: 8px; font-weight: bold; }
+    #blocker {
+      position: absolute; inset: 0;
+      background: rgba(0,0,0,0.85);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: white; cursor: pointer; z-index: 10;
+    }
+    #blocker h1 { font-size: 28px; margin-bottom: 12px; }
+    #blocker p { opacity: 0.8; margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <div id="blocker">
+    <h1>Mini GTA 3D</h1>
+    <p>Clique para jogar</p>
+    <p style="margin-top:16px;font-size:13px;opacity:0.6">WASD = mover | Mouse = olhar | E = entrar/sair do carro</p>
+  </div>
+
+  <div id="ui">
+    <h1>MINI GTA 3D</h1>
+    <div>WASD = mover / dirigir</div>
+    <div>Mouse = olhar</div>
+    <div>E = entrar / sair do carro</div>
+    <div>Espaço = pular</div>
+    <div id="status">Status: A PÉ</div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+    // ========== SETUP ==========
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a2e);
+    scene.fog = new THREE.Fog(0x1a1a2e, 40, 120);
+
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 200);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    // Luzes
+    const ambient = new THREE.AmbientLight(0x404060, 1.2);
+    scene.add(ambient);
+    const sun = new THREE.DirectionalLight(0xfff5e0, 1.4);
+    sun.position.set(30, 50, 20);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    scene.add(sun);
+
+    // Chão
+    const groundGeo = new THREE.PlaneGeometry(200, 200);
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x2a2a35 });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // Grid
+    const grid = new THREE.GridHelper(200, 40, 0x444455, 0x333344);
+    scene.add(grid);
+
+    // ========== CIDADE ==========
+    const buildings = [];
+    const buildingMat = new THREE.MeshStandardMaterial({ roughness: 0.8 });
+
+    function createBuilding(x, z, w, h, d, color) {
+      const geo = new THREE.BoxGeometry(w, h, d);
+      const mat = buildingMat.clone();
+      mat.color.set(color);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(x, h / 2, z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+      buildings.push({ mesh, x, z, w, h, d });
+    }
+
+    for (let ix = -6; ix <= 6; ix++) {
+      for (let iz = -6; iz <= 6; iz++) {
+        if (ix === 0 && iz === 0) continue;
+        if (Math.random() < 0.3) continue; // ruas
+        const h = 4 + Math.random() * 14;
+        const w = 6 + Math.random() * 5;
+        const d = 6 + Math.random() * 5;
+        const color = new THREE.Color().setHSL(0.6 + Math.random() * 0.1, 0.2, 0.25 + Math.random() * 0.2);
+        createBuilding(ix * 12, iz * 12, w, h, d, color);
+      }
+    }
+
+    // ========== PLAYER ==========
+    const player = {
+      position: new THREE.Vector3(0, 1.6, 0),
+      velocity: new THREE.Vector3(),
+      yaw: 0,
+      pitch: 0,
+      onGround: true,
+      inCar: false,
+      speed: 9,
+      height: 1.6
+    };
+
+    // Visual do player (cápsula simples)
+    const playerMesh = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.4, 1.0, 4, 8),
+      new THREE.MeshStandardMaterial({ color: 0x4fc3f7 })
+    );
+    playerMesh.castShadow = true;
+    scene.add(playerMesh);
+
+    // ========== CARRO ==========
+    const car = {
+      position: new THREE.Vector3(6, 0.6, 4),
+      yaw: 0,
+      speed: 0,
+      mesh: null
+    };
+
+    const carGroup = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(2.2, 0.9, 4.4),
+      new THREE.MeshStandardMaterial({ color: 0xe53935 })
+    );
+    body.position.y = 0.5;
+    body.castShadow = true;
+    carGroup.add(body);
+
+    // Rodas
+    const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.3, 12);
+    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    [[-0.9, 0.35, 1.3], [0.9, 0.35, 1.3], [-0.9, 0.35, -1.3], [0.9, 0.35, -1.3]].forEach(([x,y,z]) => {
+      const w = new THREE.Mesh(wheelGeo, wheelMat);
+      w.rotation.z = Math.PI / 2;
+      w.position.set(x, y, z);
+      carGroup.add(w);
+    });
+
+    carGroup.position.copy(car.position);
+    scene.add(carGroup);
+    car.mesh = carGroup;
+
+    // ========== NPCs ==========
+    const npcs = [];
+    for (let i = 0; i < 14; i++) {
+      const mesh = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.35, 0.9, 4, 8),
+        new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(Math.random(), 0.5, 0.55) })
+      );
+      mesh.castShadow = true;
+      const pos = new THREE.Vector3(
+        (Math.random() - 0.5) * 80,
+        1.0,
+        (Math.random() - 0.5) * 80
+      );
+      mesh.position.copy(pos);
+      scene.add(mesh);
+      npcs.push({
+        mesh,
+        position: pos,
+        target: pos.clone(),
+        speed: 1.5 + Math.random() * 2,
+        timer: 0
+      });
+    }
+
+    // ========== CONTROLES ==========
+    const controls = new PointerLockControls(camera, document.body);
+    const blocker = document.getElementById('blocker');
+    const statusEl = document.getElementById('status');
+
+    blocker.addEventListener('click', () => controls.lock());
+    controls.addEventListener('lock', () => blocker.style.display = 'none');
+    controls.addEventListener('unlock', () => blocker.style.display = 'flex');
+
+    const keys = {};
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    // ========== COLISÃO SIMPLES ==========
+    function collides(pos, radius) {
+      for (const b of buildings) {
+        const dx = Math.max(Math.abs(pos.x - b.x) - b.w / 2, 0);
+        const dz = Math.max(Math.abs(pos.z - b.z) - b.d / 2, 0);
+        if (dx * dx + dz * dz < radius * radius && pos.y < b.h + 0.5) return true;
+      }
+      return false;
+    }
+
+    // ========== UPDATE ==========
+    const clock = new THREE.Clock();
+
+    function update(dt) {
+      // Entrar/sair do carro
+      if (keys['KeyE']) {
+        keys['KeyE'] = false; // evita spam
+        if (!player.inCar) {
+          if (player.position.distanceTo(car.position) < 4.5) {
+            player.inCar = true;
+            statusEl.textContent = 'Status: DENTRO DO CARRO';
+            statusEl.style.color = '#66bb6a';
+          }
+        } else {
+          player.inCar = false;
+          player.position.set(car.position.x + 3, 1.6, car.position.z);
+          statusEl.textContent = 'Status: A PÉ';
+          statusEl.style.color = '#4fc3f7';
+        }
+      }
+
+      if (player.inCar) {
+        // Dirigir
+        let accel = 0;
+        if (keys['KeyW']) accel = 1;
+        if (keys['KeyS']) accel = -0.5;
+
+        let steer = 0;
+        if (keys['KeyA']) steer = 1;
+        if (keys['KeyD']) steer = -1;
+
+        car.yaw += steer * 1.8 * dt * (Math.abs(accel) > 0.1 ? 1 : 0.4);
+        const speed = accel * 16;
+        const fx = Math.sin(car.yaw);
+        const fz = Math.cos(car.yaw);
+
+        const next = car.position.clone();
+        next.x += fx * speed * dt;
+        next.z += fz * speed * dt;
+
+        if (!collides(next, 1.8)) {
+          car.position.copy(next);
+        }
+
+        car.mesh.position.copy(car.position);
+        car.mesh.rotation.y = car.yaw;
+
+        player.position.copy(car.position);
+        player.position.y = 1.4;
+        player.yaw = car.yaw;
+
+        playerMesh.visible = false;
+      } else {
+        // Andar
+        playerMesh.visible = true;
+
+        const forward = new THREE.Vector3(Math.sin(player.yaw), 0, Math.cos(player.yaw));
+        const right = new THREE.Vector3(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
+
+        const move = new THREE.Vector3();
+        if (keys['KeyW']) move.add(forward);
+        if (keys['KeyS']) move.sub(forward);
+        if (keys['KeyA']) move.sub(right);
+        if (keys['KeyD']) move.add(right);
+
+        if (move.length() > 0) {
+          move.normalize().multiplyScalar(player.speed * dt);
+          const next = player.position.clone().add(move);
+          if (!collides(next, 0.5)) {
+            player.position.x = next.x;
+            player.position.z = next.z;
+          }
+        }
+
+        // Pulo
+        if (keys['Space'] && player.onGround) {
+          player.velocity.y = 7;
+          player.onGround = false;
+        }
+        player.velocity.y -= 18 * dt;
+        player.position.y += player.velocity.y * dt;
+        if (player.position.y <= 1.6) {
+          player.position.y = 1.6;
+          player.velocity.y = 0;
+          player.onGround = true;
+        }
+
+        playerMesh.position.copy(player.position);
+        playerMesh.position.y = player.position.y - 0.3;
+      }
+
+      // NPCs
+      for (const n of npcs) {
+        n.timer -= dt;
+        if (n.timer <= 0) {
+          n.target.set(
+            n.position.x + (Math.random() - 0.5) * 30,
+            1.0,
+            n.position.z + (Math.random() - 0.5) * 30
+          );
+          n.timer = 2 + Math.random() * 4;
+        }
+        const dir = n.target.clone().sub(n.position);
+        if (dir.length() > 0.8) {
+          dir.normalize().multiplyScalar(n.speed * dt);
+          const next = n.position.clone().add(dir);
+          if (!collides(next, 0.5)) {
+            n.position.copy(next);
+            n.mesh.position.copy(next);
+          } else {
+            n.timer = 0;
+          }
+        }
+      }
+
+      // Câmera terceira pessoa
+      const dist = player.inCar ? 9 : 6.5;
+      const height = player.inCar ? 3.8 : 2.8;
+      const target = player.position.clone();
+      target.y += 0.5;
+
+      camera.position.x = target.x - Math.sin(player.yaw) * dist;
+      camera.position.z = target.z - Math.cos(player.yaw) * dist;
+      camera.position.y = target.y + height;
+      camera.lookAt(target);
+    }
+
+    // Pointer lock atualiza yaw/pitch
+    controls.addEventListener('change', () => {
+      // o PointerLockControls já move a câmera, mas nós controlamos manualmente
+    });
+
+    // Pegamos o movimento do mouse manualmente porque usamos câmera própria
+    document.addEventListener('mousemove', (e) => {
+      if (!controls.isLocked) return;
+      player.yaw -= e.movementX * 0.002;
+      player.pitch -= e.movementY * 0.002;
+      player.pitch = Math.max(-1.2, Math.min(1.2, player.pitch));
+    });
+
+    // ========== LOOP ==========
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.05);
+      if (controls.isLocked) update(dt);
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

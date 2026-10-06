@@ -1,60 +1,42 @@
-# Mini GTA 3D Prototype
+# Mini GTA 3D – Protótipo
 
-Protótipo **bem simples** em C++ + raylib de um jogo estilo GTA em 3D.
+Protótipo simples estilo GTA em 3D que **roda direto no navegador**.
 
-## O que tem
+## Jogar agora (GitHub Pages)
 
-- Cidade pequena feita de prédios (cubos)
-- Personagem controlável (andar + olhar)
-- Carro que você pode entrar e dirigir
-- Alguns NPCs andando pela cidade
-- Câmera em terceira pessoa
-- Colisão básica com prédios
+Depois de ativar o GitHub Pages (veja abaixo), o link será:
 
-**Não é um GTA San Andreas de verdade.** É só um protótipo divertido pra mostrar a ideia.
+**https://vibestreamoficial.github.io/mini-gta-3d/**
+
+### Como ativar o GitHub Pages (só precisa fazer 1 vez):
+
+1. Entra no repositório: https://github.com/vibestreamoficial/mini-gta-3d
+2. Vai em **Settings** → **Pages** (no menu da esquerda)
+3. Em **Source** escolhe **Deploy from a branch**
+4. Branch: `main`  /  Folder: `/ (root)`
+5. Clica em **Save**
+
+Em 1-2 minutos o site fica no ar.
 
 ## Controles
 
 | Tecla | Ação |
 |-------|------|
-| **W A S D** | Andar / Dirigir |
-| **Mouse** | Olhar ao redor |
+| **WASD** | Andar / Dirigir |
+| **Mouse** | Olhar |
 | **E** | Entrar / Sair do carro |
 | **Espaço** | Pular (só a pé) |
-| **ESC** | Sair |
+| **Clique** | Travar o mouse (começar a jogar) |
 
-## Como compilar
+## O que tem
 
-### Requisitos
-- C++17 ou superior
-- [raylib](https://www.raylib.com/) instalado
-
-### Linux (Ubuntu/Debian)
-```bash
-sudo apt install libraylib-dev
-mkdir build && cd build
-cmake ..
-make
-./mini-gta-3d
-```
-
-### Windows
-1. Instale raylib (via vcpkg ou baixe o binário)
-2. Use CMake ou o Visual Studio
-
-### macOS
-```bash
-brew install raylib
-mkdir build && cd build
-cmake ..
-make
-./mini-gta-3d
-```
-
-## Estrutura
-
-- `main.cpp` → todo o jogo
-- `CMakeLists.txt` → build system
+- Cidade com prédios
+- Personagem a pé
+- Carro dirigível
+- NPCs andando
+- Câmera em terceira pessoa
+- Colisão básica
 
 ---
-Feito por diversão com a conta GitHub conectada 😄
+
+Feito com Three.js (roda 100% no navegador, sem instalar nada).
